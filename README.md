@@ -22,7 +22,7 @@ Grafana і Argo CD відкриті лише для IP адміністрато�
 | CI/CD на кожну зміну, деплой на тестовий сервер | [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) |
 | Сайт відкривається в браузері | посилання вище |
 | Інструкція з налаштування | розділ [«Як розгорнути у себе»](#як-розгорнути-у-себе) |
-| *Бонус:* моніторинг і логування | Prometheus, Grafana, Loki, алерти в Telegram ([`argocd/apps/`](argocd/apps), [`k8s/monitoring.yaml`](k8s/monitoring.yaml)) |
+| *Бонус:* моніторинг і логування | Prometheus, Grafana, Loki, алерти (з готовою інтеграцією з Telegram) ([`argocd/apps/`](argocd/apps), [`k8s/monitoring.yaml`](k8s/monitoring.yaml)) |
 | *Бонус:* Kubernetes | k3s + Argo CD ([`k8s/`](k8s), [`argocd/`](argocd)) |
 | *Бонус:* Terraform | [`terraform/`](terraform) |
 
@@ -69,7 +69,7 @@ flowchart LR
     repo -. "Argo CD стежить за git" .-> argo
     hub -.-> app1 & app2
     mon -- "перевіряє /healthz" --> s1 & s2
-    mon -- алерти --> tg([Telegram])
+    mon -. "алерти (опційно)" .-> tg([Telegram])
 ```
 
 **Сервер 1 (Docker)** оновлює `scripts/deploy.sh`. Новий контейнер запускається поруч зі старим, Caddy розподіляє трафік між ними, і старий видаляється лише тоді, коли новий пройшов healthcheck. Якщо новий не піднявся, старий просто продовжує працювати. Під час деплою з 224 запитів жоден не впав.
@@ -195,7 +195,7 @@ gh secret set DOCKERHUB_TOKEN
 | `HelloNginxSlow` | сайт відповідає довше 1 секунди протягом 5 хвилин |
 | `HelloNginxCertExpiresSoon` | сертифікат спливає менше ніж за 14 днів |
 
-Ці алерти надходять у Telegram, коли спрацьовують і коли вирішуються. Логи сервера 1 зберігаються на самому сервері з ротацією і переглядаються командою `docker logs`.
+Ці алерти видно на дашборді (панель *Firing alerts*) і в *Grafana → Alerting*. Сповіщення в Telegram налаштовані в Alertmanager і вмикаються одним скриптом (крок 6 вище). Логи сервера 1 зберігаються на самому сервері з ротацією і переглядаються командою `docker logs`.
 
 ## Корисні команди
 

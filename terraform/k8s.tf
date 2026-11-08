@@ -21,9 +21,16 @@ resource "aws_security_group" "k8s" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description = "SSH (admins only)"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = var.admin_cidrs
+  }
+
   dynamic "ingress" {
     for_each = {
-      22                     = "SSH"
       6443                   = "Kubernetes API (kubectl)"
       (var.argocd_nodeport)  = "Argo CD UI"
       (var.grafana_nodeport) = "Grafana"
@@ -33,7 +40,7 @@ resource "aws_security_group" "k8s" {
       from_port   = ingress.key
       to_port     = ingress.key
       protocol    = "tcp"
-      cidr_blocks = var.admin_cidrs
+      cidr_blocks = distinct(concat(var.admin_cidrs, var.reviewer_cidrs))
     }
   }
 
@@ -79,6 +86,7 @@ resource "aws_instance" "k8s" {
     argocd_version    = var.argocd_version
     argocd_nodeport   = var.argocd_nodeport
     admin_password    = var.admin_password
+    reviewer_password = var.reviewer_password
     root_app_manifest = file("${path.module}/../argocd/root.yaml")
   })
   user_data_replace_on_change = true

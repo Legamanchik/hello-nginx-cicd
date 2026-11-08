@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grafana-reviewer
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: create-user
+          image: curlimages/curl:8.23.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            limits:
+              memory: 32Mi
+          env:
+            - name: ADMIN_USER
+              valueFrom: { secretKeyRef: { name: grafana-admin, key: admin-user } }
+            - name: ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: grafana-admin, key: admin-password } }
+            - name: REVIEWER_PASSWORD
+              valueFrom: { secretKeyRef: { name: grafana-reviewer, key: password } }
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              G=http://kps-grafana.monitoring.svc
+              until curl -fsS -o /dev/null "$G/api/health"; do echo "waiting for Grafana"; sleep 10; done
+              body=$(printf '{"name":"Reviewer","login":"reviewer","password":"%s"}' "$REVIEWER_PASSWORD")
+              code=$(curl -s -o /dev/null -w '%{http_code}' -u "$ADMIN_USER:$ADMIN_PASSWORD" \
+                -H 'Content-Type: application/json' -X POST "$G/api/admin/users" -d "$body")
+              case "$code" in
+                200) echo "user reviewer created (role Viewer)" ;;
+                412)
+                  id=$(curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" "$G/api/users/lookup?loginOrEmail=reviewer" \
+                    | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+                  curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" -H 'Content-Type: application/json' -X PUT \
+                    "$G/api/admin/users/$id/password" -d "$(printf '{"password":"%s"}' "$REVIEWER_PASSWORD")" >/dev/null
+                  echo "user reviewer already existed, password reset" ;;
+                *) echo "unexpected HTTP $code"; exit 1 ;;
+              esac

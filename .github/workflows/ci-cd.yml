@@ -69,6 +69,7 @@ jobs:
           {
             kubectl kustomize k8s;          echo ---
             kubectl kustomize monitoring;   echo ---
+            cat cluster/reviewer.yaml;      echo ---
             cat argocd/root.yaml
             for f in argocd/apps/*.yaml; do echo ---; cat "$f"; done
           } | docker run --rm -i ghcr.io/yannh/kubeconform:v0.8.0 \

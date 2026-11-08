@@ -6,3 +6,5 @@
 # admin_cidrs        = ["203.0.113.10/32"]
 # k8s_instance_type  = "c7i-flex.large"
 # admin_password     = "change-me"   # Argo CD and Grafana admin
+# reviewer_password  = "read-only-password"   # Argo CD and Grafana user "reviewer"
+# reviewer_cidrs     = ["0.0.0.0/0"]           # who can open Grafana / Argo CD / kubectl

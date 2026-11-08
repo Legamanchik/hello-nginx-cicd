@@ -90,6 +90,18 @@ variable "admin_password" {
   sensitive   = true
 }
 
+variable "reviewer_password" {
+  description = "Password of the read-only 'reviewer' user in Argo CD and Grafana. No single quotes."
+  type        = string
+  sensitive   = true
+}
+
+variable "reviewer_cidrs" {
+  description = "Who may open Grafana, Argo CD and the Kubernetes API (all password/token protected). [] = admins only"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 variable "admin_cidrs" {
   description = "Your IP(s) in CIDR form, e.g. [\"203.0.113.10/32\"]: allowed to reach SSH, the Kubernetes API, Argo CD and Grafana on the k3s node"
   type        = list(string)

@@ -7,6 +7,7 @@ K3S_VERSION="${k3s_version}"
 ARGOCD_VERSION="${argocd_version}"
 ARGOCD_NODEPORT="${argocd_nodeport}"
 ADMIN_PASSWORD='${admin_password}'
+REVIEWER_PASSWORD='${reviewer_password}'
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 export PATH=$PATH:/usr/local/bin
@@ -61,6 +62,17 @@ kubectl -n argocd delete secret argocd-initial-admin-secret --ignore-not-found
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n monitoring create secret generic grafana-admin \
   --from-literal=admin-user=admin --from-literal=admin-password="$ADMIN_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+echo "==> Read-only 'reviewer' user for Argo CD (Grafana's is created by a Job in monitoring/)"
+kubectl -n argocd patch configmap argocd-cm --type merge -p '{"data":{"accounts.reviewer":"login"}}'
+kubectl -n argocd patch configmap argocd-rbac-cm --type merge \
+  -p '{"data":{"policy.csv":"g, reviewer, role:readonly\n"}}'
+HASH=$(kubectl -n argocd exec deploy/argocd-server -- argocd account bcrypt --password "$REVIEWER_PASSWORD")
+kubectl -n argocd patch secret argocd-secret --type merge -p "{
+  \"stringData\": {\"accounts.reviewer.password\": \"$HASH\", \"accounts.reviewer.passwordMtime\": \"$(date -u +%FT%TZ)\"}}"
+kubectl -n monitoring create secret generic grafana-reviewer \
+  --from-literal=password="$REVIEWER_PASSWORD" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "==> Registering the root Application (app of apps)"

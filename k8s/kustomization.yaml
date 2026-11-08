@@ -10,4 +10,4 @@ resources:
 images:
   - name: hello-nginx
     newName: legamanchik/hello-nginx
-    newTag: b9ffd0353dd015d4f98c73c350ea85d970229fff
+    newTag: cadac37c52a7f350c040333aa5d98cf40c1d2f2e

@@ -45,3 +45,41 @@ variable "budget_limit_usd" {
   type        = number
   default     = 30
 }
+
+# --- Kubernetes node (k3s + Argo CD) ---------------------------------------
+
+variable "enable_k8s" {
+  description = "Create the second server with k3s and Argo CD"
+  type        = bool
+  default     = true
+}
+
+variable "k8s_instance_type" {
+  description = "EC2 type for the k3s node. t3.small (2 GB) fits k3s + a trimmed Argo CD with swap; c7i-flex.large (4 GB) is roomier but ~5x pricier"
+  type        = string
+  default     = "t3.small"
+}
+
+variable "k3s_version" {
+  description = "k3s release (must be in Argo CD's tested Kubernetes versions)"
+  type        = string
+  default     = "v1.36.6+k3s1"
+}
+
+variable "argocd_version" {
+  description = "Argo CD release tag"
+  type        = string
+  default     = "v3.5.7"
+}
+
+variable "argocd_nodeport" {
+  description = "NodePort for the Argo CD UI (HTTPS)"
+  type        = number
+  default     = 30443
+}
+
+variable "admin_cidrs" {
+  description = "Your IP(s) in CIDR form, e.g. [\"203.0.113.10/32\"]: allowed to reach SSH, the Kubernetes API and the Argo CD UI on the k3s node"
+  type        = list(string)
+  default     = []
+}

@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hello
+resources:
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+images:
+  - name: hello-nginx
+    newName: legamanchik/hello-nginx
+    newTag: dcac7314cddd274ecc809580c5ef7fc1924c3756

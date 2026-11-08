@@ -3,7 +3,7 @@
 Проста сторінка «Hello, World!» на Nginx. Після кожного push у `main` вона сама збирається, перевіряється і викочується на два сервери в AWS:
 
 - **Сервер 1 (Docker):** контейнер оновлюється скриптом `scripts/deploy.sh` через SSH.
-- **Сервер 2 (k3s + Argo CD):** Kubernetes сам підтягує нову версію з git (GitOps).
+- **Сервер 2 (k3s + Argo CD):** Kubernetes сам підтягує нову версію з git (GitOps). Тут же працює моніторинг: Prometheus, Grafana, Loki та алерти.
 
 Обидва сервери створює Terraform.
 
@@ -26,8 +26,10 @@ git push → GitHub Actions
 | `app/`, `nginx/`, `Dockerfile` | сам сайт, конфіг Nginx і образ |
 | `scripts/deploy.sh` | збірка, push і деплой на сервер 1 |
 | `.github/workflows/ci-cd.yml` | pipeline |
-| `k8s/` | маніфести для Kubernetes (Deployment, Service, Ingress) |
-| `argocd/application.yaml` | що саме Argo CD має синхронізувати |
+| `k8s/` | маніфести сайту для Kubernetes, збір його метрик, алерти і перевірки доступності |
+| `argocd/root.yaml` | «головний» застосунок Argo CD: підтягує все з `argocd/apps/` |
+| `argocd/apps/` | що розгорнуто в кластері: сайт, Prometheus + Grafana, Loki, Alloy, blackbox exporter |
+| `monitoring/` | дашборд Grafana (генерується скриптом `build.py`) |
 | `terraform/` | сервери, security groups, статичні IP |
 
 ## Як розгорнути у себе
@@ -49,14 +51,19 @@ ssh-keygen -t ed25519 -N "" -f ~/.ssh/hello-nginx-deploy
 
 **3. Підняти сервери**
 
-Спершу створіть файл `terraform/terraform.tfvars` і впишіть у нього свій IP. Тільки з цієї адреси будуть доступні SSH, kubectl і Argo CD на сервері 2. Свій IP можна дізнатися командою `curl https://checkip.amazonaws.com`.
+Спершу створіть файл `terraform/terraform.tfvars` (у git він не потрапляє) і впишіть у нього дві речі:
+- свій IP: тільки з нього будуть доступні SSH, kubectl, Argo CD і Grafana на сервері 2. Дізнатися IP можна командою `curl https://checkip.amazonaws.com`;
+- пароль адміністратора для Argo CD і Grafana.
 ```hcl
-admin_cidrs = ["ВАШ_IP/32"]
+admin_cidrs    = ["ВАШ_IP/32"]
+admin_password = "придумайте-пароль"
 ```
 ```bash
 cd terraform && terraform init && terraform apply
 ```
-Terraform виведе IP обох серверів і посилання на Argo CD. Сервер 2 налаштовується ще приблизно 5 хвилин після цього.
+Terraform виведе IP обох серверів і посилання на Argo CD і Grafana. Сервер 2 налаштовується ще приблизно 5 хвилин: встановлюються k3s і Argo CD, а Argo CD сам розгортає з git сайт і моніторинг.
+
+> 💰 Сервер 1 (`t3.micro`) коштує ≈ $8 на місяць, сервер 2 (`c7i-flex.large`, 4 GB RAM для моніторингу) ≈ $74 на місяць. Без моніторингу сервер 2 можна зменшити до `k8s_instance_type = "t3.small"` (≈ $16 на місяць).
 
 **4. Додати секрети в GitHub**
 
@@ -76,7 +83,7 @@ gh secret set DOCKERHUB_TOKEN
 ```
 Остання команда попросить вставити токен Docker Hub. Створити його можна в *Docker Hub → Account settings → Personal access tokens*, з правами Read & Write.
 
-У `argocd/application.yaml` вкажіть посилання на свій репозиторій.
+Якщо ви зробили fork, замініть посилання на репозиторій (`repoURL`) у `argocd/root.yaml`, `argocd/apps/hello-nginx.yaml` і `argocd/apps/monitoring-config.yaml`.
 
 **5. Запушити код**
 
@@ -89,15 +96,33 @@ gh secret set DOCKERHUB_TOKEN
 | Сайт (Docker) | `http://<IP_сервера_1>/` |
 | Сайт (Kubernetes) | `http://<IP_сервера_2>/` |
 | Стан і версія | `/healthz` повертає `ok`, а `/version.txt` повертає SHA коміту |
-| Argo CD | `https://<IP_сервера_2>:30443`, логін `admin` (браузер попередить про самопідписаний сертифікат) |
-
-Пароль від Argo CD:
-```bash
-ssh -i ~/.ssh/hello-nginx-deploy ec2-user@<IP_сервера_2> \
-  "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
-```
+| Argo CD | `https://<IP_сервера_2>:30443`, логін `admin` і пароль з `admin_password` (браузер попередить про самопідписаний сертифікат) |
+| Grafana | `http://<IP_сервера_2>:30300`, ті самі логін і пароль |
 
 Щоб перевірити автодеплой, змініть текст в `app/index.html` і запуште. Нова версія з'явиться на обох серверах.
+
+## Моніторинг і логи
+
+У Grafana відкрийте *Dashboards → **Hello Nginx***. На дашборді видно:
+- **чи живі обидва сайти:** blackbox exporter кожні 30 секунд відкриває `/healthz` на сервері 1 і сервері 2;
+- **час відповіді**, кількість запитів за секунду й активні з'єднання nginx (збирає sidecar `nginx-prometheus-exporter`);
+- **скільки подів готово** і скільки пам'яті вони використовують;
+- **HTTP-статуси** (200, 404, …) і самі **логи** nginx. Їх збирає Alloy, а зберігає Loki 3 дні.
+
+Окрім цього дашборда, kube-prometheus-stack додає готові дашборди для сервера (node exporter) і Kubernetes.
+
+**Алерти** описані в `k8s/monitoring.yaml`:
+
+| Алерт | Коли спрацьовує |
+|---|---|
+| `HelloNginxSiteDown` | сайт не відповідає 2 хвилини |
+| `HelloNginxNoReadyPods` | у Kubernetes немає жодного робочого пода |
+| `HelloNginxRestarting` | контейнер перезапустився більше 3 разів за 15 хвилин |
+| `HelloNginxSlow` | сайт відповідає довше 1 секунди протягом 5 хвилин |
+
+Алерти, що спрацювали, видно на дашборді (панель *Firing alerts*) і в *Grafana → Alerting*. Щоб отримувати їх на пошту чи в Telegram, додайте receiver в Alertmanager (`alertmanager.config` у `argocd/apps/kube-prometheus-stack.yaml`).
+
+Логи сервера 1 (Docker) зберігаються на самому сервері з ротацією (3 файли по 10 MB): `docker logs hello-nginx`.
 
 ## Корисні команди
 
@@ -106,6 +131,8 @@ ssh -i ~/.ssh/hello-nginx-deploy ec2-user@<IP_сервера_2> \
 docker build -t hello . && docker run -p 8080:8080 hello   # запуск локально → http://localhost:8080
 ssh ... 'docker logs -f hello-nginx'       # логи на сервері 1
 ssh ... 'kubectl -n hello get pods'        # стан подів на сервері 2
+ssh ... 'kubectl -n argocd get applications'   # що розгорнув Argo CD
+python3 monitoring/dashboards/build.py     # перегенерувати дашборд після змін
 ```
 
 ## Видалити все
@@ -119,6 +146,7 @@ cd terraform && terraform destroy
 - **Деплой падає з `Permission denied`:** перевірте, що `SSH_PRIVATE_KEY` вставлений повністю.
 - **`Host key verification failed`:** IP сервера змінився. Заново виконайте `ssh-keyscan` і оновіть секрет `SSH_KNOWN_HOSTS`.
 - **Trivy зупинив збірку:** у базовому образі з'явилися нові вразливості. Зазвичай допомагає просто перезапустити pipeline.
+- **У Grafana немає даних одразу після створення сервера:** зачекайте 2–3 хвилини, поки Argo CD розгорне моніторинг.
 - **Сервер 2 не відповідає:** подивіться лог встановлення:
   ```bash
   ssh ... 'sudo cat /var/log/bootstrap-k3s.log'

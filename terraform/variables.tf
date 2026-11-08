@@ -28,10 +28,10 @@ variable "ssh_public_key_path" {
   default     = "~/.ssh/hello-nginx-deploy.pub"
 }
 
-variable "github_repo" {
-  description = "GitHub repository (owner/name) allowed to deploy through OIDC"
+variable "github_oidc_subject_prefix" {
+  description = "Repository part of the GitHub OIDC 'sub' claim. New repos use the immutable form with numeric IDs; get it with: gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix"
   type        = string
-  default     = "Legamanchik/hello-nginx-cicd"
+  default     = "repo:Legamanchik@60813108/hello-nginx-cicd@1450550531"
 }
 
 variable "budget_alert_email" {

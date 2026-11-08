@@ -4,10 +4,17 @@ metadata:
   name: hello-nginx
   labels:
     app.kubernetes.io/name: hello-nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
 spec:
   ingressClassName: traefik
+  tls:
+    - hosts:
+        - 51-20-48-179.sslip.io
+      secretName: hello-nginx-tls
   rules:
-    - http:
+    - host: 51-20-48-179.sslip.io
+      http: &paths
         paths:
           - path: /
             pathType: Prefix
@@ -16,3 +23,4 @@ spec:
                 name: hello-nginx
                 port:
                   name: http
+    - http: *paths

@@ -6,6 +6,7 @@ resources:
   - service.yaml
   - ingress.yaml
   - monitoring.yaml
+  - certificate.yaml
 images:
   - name: hello-nginx
     newName: legamanchik/hello-nginx

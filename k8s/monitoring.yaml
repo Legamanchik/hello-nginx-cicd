@@ -47,6 +47,13 @@ spec:
             severity: warning
           annotations:
             summary: "Container {{ $labels.container }} in {{ $labels.pod }} restarts often"
+        - alert: HelloNginxCertExpiresSoon
+          expr: (probe_ssl_earliest_cert_expiry{job="hello-nginx-probe"} - time()) / 86400 < 14
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "TLS certificate of {{ $labels.instance }} expires in {{ $value | humanize }} days"
         - alert: HelloNginxSlow
           expr: probe_duration_seconds{job="hello-nginx-probe"} > 1
           for: 5m
@@ -72,5 +79,5 @@ spec:
   targets:
     staticConfig:
       static:
-        - http://51.21.5.62/healthz
-        - http://hello-nginx.hello.svc/healthz
+        - https://51-21-5-62.sslip.io/healthz
+        - https://51-20-48-179.sslip.io/healthz

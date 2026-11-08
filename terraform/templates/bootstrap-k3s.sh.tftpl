@@ -7,6 +7,8 @@ K3S_VERSION="${k3s_version}"
 ARGOCD_VERSION="${argocd_version}"
 ARGOCD_NODEPORT="${argocd_nodeport}"
 ADMIN_PASSWORD='${admin_password}'
+TELEGRAM_BOT_TOKEN='${telegram_bot_token}'
+TELEGRAM_CHAT_ID='${telegram_chat_id}'
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 export PATH=$PATH:/usr/local/bin
@@ -61,6 +63,11 @@ kubectl -n argocd delete secret argocd-initial-admin-secret --ignore-not-found
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n monitoring create secret generic grafana-admin \
   --from-literal=admin-user=admin --from-literal=admin-password="$ADMIN_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n monitoring create secret generic alertmanager-telegram \
+  --from-literal=bot-token="$${TELEGRAM_BOT_TOKEN:-unset}" \
+  --from-literal=chat-id="$${TELEGRAM_CHAT_ID:-0}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "==> Registering the root Application (app of apps)"

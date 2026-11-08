@@ -4,7 +4,17 @@ output "public_ip" {
 }
 
 output "app_url" {
-  value = "http://${aws_eip.app.public_ip}/"
+  value = "https://${replace(aws_eip.app.public_ip, ".", "-")}.sslip.io/"
+}
+
+output "app_instance_id" {
+  description = "GitHub variable DEPLOY_INSTANCE_ID"
+  value       = aws_instance.app.id
+}
+
+output "github_deploy_role_arn" {
+  description = "GitHub variable AWS_DEPLOY_ROLE_ARN"
+  value       = aws_iam_role.github_deploy.arn
 }
 
 output "ssh_command" {
@@ -17,7 +27,7 @@ output "k8s_public_ip" {
 }
 
 output "k8s_app_url" {
-  value = var.enable_k8s ? "http://${aws_eip.k8s[0].public_ip}/" : null
+  value = var.enable_k8s ? "https://${replace(aws_eip.k8s[0].public_ip, ".", "-")}.sslip.io/" : null
 }
 
 output "argocd_url" {

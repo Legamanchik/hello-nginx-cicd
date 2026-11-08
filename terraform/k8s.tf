@@ -13,6 +13,14 @@ resource "aws_security_group" "k8s" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description = "HTTPS (Traefik ingress)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   dynamic "ingress" {
     for_each = {
       22                     = "SSH"
@@ -29,11 +37,21 @@ resource "aws_security_group" "k8s" {
     }
   }
 
+  #trivy:ignore:AWS-0104
   egress {
-    description = "All outbound (images, git, k3s/Argo CD downloads)"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  #trivy:ignore:AWS-0104
+  egress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -56,12 +74,14 @@ resource "aws_instance" "k8s" {
   vpc_security_group_ids = [aws_security_group.k8s[0].id]
 
   user_data = templatefile("${path.module}/templates/bootstrap-k3s.sh.tftpl", {
-    public_ip         = aws_eip.k8s[0].public_ip
-    k3s_version       = var.k3s_version
-    argocd_version    = var.argocd_version
-    argocd_nodeport   = var.argocd_nodeport
-    admin_password    = var.admin_password
-    root_app_manifest = file("${path.module}/../argocd/root.yaml")
+    public_ip          = aws_eip.k8s[0].public_ip
+    k3s_version        = var.k3s_version
+    argocd_version     = var.argocd_version
+    argocd_nodeport    = var.argocd_nodeport
+    admin_password     = var.admin_password
+    telegram_bot_token = var.telegram_bot_token
+    telegram_chat_id   = var.telegram_chat_id
+    root_app_manifest  = file("${path.module}/../argocd/root.yaml")
   })
   user_data_replace_on_change = true
 

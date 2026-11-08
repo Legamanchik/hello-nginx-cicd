@@ -2,8 +2,8 @@ import json, pathlib
 
 PROM = {"type": "prometheus", "uid": "prometheus"}
 LOKI = {"type": "loki", "uid": "loki"}
-S1 = "http://51.21.5.62/healthz"
-S2 = "http://hello-nginx.hello.svc/healthz"
+S1 = "https://51-21-5-62.sslip.io/healthz"
+S2 = "https://51-20-48-179.sslip.io/healthz"
 panels, pid = [], 0
 
 def add(title, ptype, x, y, w, h, targets, ds=PROM, **extra):
@@ -36,7 +36,13 @@ add("Firing alerts", "stat", 18, 0, 6, 4,
         {"color": "green", "value": None}, {"color": "red", "value": 1}]}}},
     options=stat_opts)
 
-add("Response time", "timeseries", 0, 4, 12, 8,
+add("TLS certificate expires in", "stat", 0, 4, 6, 8,
+    [{"expr": 'min by (instance) (probe_ssl_earliest_cert_expiry{job="hello-nginx-probe"} - time())',
+      "legendFormat": "{{instance}}"}],
+    fieldConfig={"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [
+        {"color": "red", "value": None}, {"color": "orange", "value": 1209600}, {"color": "green", "value": 2592000}]}}},
+    options=dict(stat_opts, textMode="value_and_name"))
+add("Response time", "timeseries", 6, 4, 6, 8,
     [{"expr": f'probe_duration_seconds{{instance="{S1}"}}', "legendFormat": "Server 1"},
      {"expr": f'probe_duration_seconds{{instance="{S2}"}}', "legendFormat": "Server 2"}],
     fieldConfig={"defaults": {"unit": "s"}})

@@ -28,10 +28,10 @@ variable "ssh_public_key_path" {
   default     = "~/.ssh/hello-nginx-deploy.pub"
 }
 
-variable "ssh_allowed_cidrs" {
-  description = "Who may reach port 22. GitHub-hosted runners use dynamic IPs, so the default is open; auth is key-only."
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
+variable "github_repo" {
+  description = "GitHub repository (owner/name) allowed to deploy through OIDC"
+  type        = string
+  default     = "Legamanchik/hello-nginx-cicd"
 }
 
 variable "budget_alert_email" {
@@ -88,6 +88,19 @@ variable "admin_password" {
   description = "Password for the Argo CD 'admin' and Grafana 'admin' users (set it in terraform.tfvars, never in git). No single quotes."
   type        = string
   sensitive   = true
+}
+
+variable "telegram_bot_token" {
+  description = "Optional: Telegram bot token for alert notifications (from @BotFather). Can also be set later with scripts/set-telegram.sh"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "telegram_chat_id" {
+  description = "Optional: Telegram chat ID that receives the alerts"
+  type        = string
+  default     = ""
 }
 
 variable "admin_cidrs" {

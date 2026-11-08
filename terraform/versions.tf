@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.10"
 
   required_providers {
     aws = {
@@ -8,6 +8,11 @@ terraform {
     }
   }
 
+  backend "s3" {
+    key          = "hello-nginx/terraform.tfstate"
+    encrypt      = true
+    use_lockfile = true
+  }
 }
 
 provider "aws" {

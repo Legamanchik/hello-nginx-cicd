@@ -7,3 +7,4 @@
 *.tfvars
 tfplan
 .terraform.tfstate.lock.info
+terraform/backend.hcl

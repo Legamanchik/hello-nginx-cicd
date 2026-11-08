@@ -90,19 +90,6 @@ variable "admin_password" {
   sensitive   = true
 }
 
-variable "telegram_bot_token" {
-  description = "Optional: Telegram bot token for alert notifications (from @BotFather). Can also be set later with scripts/set-telegram.sh"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "telegram_chat_id" {
-  description = "Optional: Telegram chat ID that receives the alerts"
-  type        = string
-  default     = ""
-}
-
 variable "admin_cidrs" {
   description = "Your IP(s) in CIDR form, e.g. [\"203.0.113.10/32\"]: allowed to reach SSH, the Kubernetes API, Argo CD and Grafana on the k3s node"
   type        = list(string)

@@ -22,7 +22,7 @@ Grafana і Argo CD відкриті лише для IP адміністрато�
 | CI/CD на кожну зміну, деплой на тестовий сервер | [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) |
 | Сайт відкривається в браузері | посилання вище |
 | Інструкція з налаштування | розділ [«Як розгорнути у себе»](#як-розгорнути-у-себе) |
-| *Бонус:* моніторинг і логування | Prometheus, Grafana, Loki, алерти (з готовою інтеграцією з Telegram) ([`argocd/apps/`](argocd/apps), [`k8s/monitoring.yaml`](k8s/monitoring.yaml)) |
+| *Бонус:* моніторинг і логування | Prometheus, Grafana, Loki, алерти ([`argocd/apps/`](argocd/apps), [`k8s/monitoring.yaml`](k8s/monitoring.yaml)) |
 | *Бонус:* Kubernetes | k3s + Argo CD ([`k8s/`](k8s), [`argocd/`](argocd)) |
 | *Бонус:* Terraform | [`terraform/`](terraform) |
 
@@ -69,7 +69,6 @@ flowchart LR
     repo -. "Argo CD стежить за git" .-> argo
     hub -.-> app1 & app2
     mon -- "перевіряє /healthz" --> s1 & s2
-    mon -. "алерти (опційно)" .-> tg([Telegram])
 ```
 
 **Сервер 1 (Docker)** оновлює `scripts/deploy.sh`. Новий контейнер запускається поруч зі старим, Caddy розподіляє трафік між ними, і старий видаляється лише тоді, коли новий пройшов healthcheck. Якщо новий не піднявся, старий просто продовжує працювати. Під час деплою з 224 запитів жоден не впав.
@@ -96,7 +95,6 @@ flowchart LR
 |---|---|
 | `app/`, `nginx/`, `Dockerfile` | сайт, конфіг Nginx (`/healthz`, `/nginx_status`, security-заголовки) і образ |
 | `scripts/deploy.sh` | збірка, push і деплой на сервер 1 (через SSM або SSH) |
-| `scripts/set-telegram.sh` | підключення алертів до Telegram |
 | `.github/workflows/ci-cd.yml` | pipeline |
 | `.github/dependabot.yml` | щотижневе оновлення actions, базового образу і провайдерів Terraform |
 | `k8s/` | сайт у Kubernetes: Deployment, Service, Ingress з TLS, метрики, алерти, перевірки доступності |
@@ -162,14 +160,6 @@ gh secret set DOCKERHUB_TOKEN
 
 **5. Запушити код.** Через ~2 хвилини сайт доступний на обох серверах.
 
-**6. (Опційно) Алерти в Telegram**
-1. Створіть бота через [@BotFather](https://t.me/BotFather).
-2. Напишіть боту будь-яке повідомлення.
-3. Запустіть скрипт і вставте токен, коли він попросить:
-   ```bash
-   ./scripts/set-telegram.sh <IP_сервера_2>
-   ```
-
 ## Перевірка
 
 | Що | Де |
@@ -195,7 +185,7 @@ gh secret set DOCKERHUB_TOKEN
 | `HelloNginxSlow` | сайт відповідає довше 1 секунди протягом 5 хвилин |
 | `HelloNginxCertExpiresSoon` | сертифікат спливає менше ніж за 14 днів |
 
-Ці алерти видно на дашборді (панель *Firing alerts*) і в *Grafana → Alerting*. Сповіщення в Telegram налаштовані в Alertmanager і вмикаються одним скриптом (крок 6 вище). Логи сервера 1 зберігаються на самому сервері з ротацією і переглядаються командою `docker logs`.
+Ці алерти видно на дашборді (панель *Firing alerts*) і в *Grafana → Alerting*. Логи сервера 1 зберігаються на самому сервері з ротацією і переглядаються командою `docker logs`.
 
 ## Корисні команди
 

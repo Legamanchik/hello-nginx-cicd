@@ -79,8 +79,6 @@ resource "aws_instance" "k8s" {
     argocd_version     = var.argocd_version
     argocd_nodeport    = var.argocd_nodeport
     admin_password     = var.admin_password
-    telegram_bot_token = var.telegram_bot_token
-    telegram_chat_id   = var.telegram_chat_id
     root_app_manifest  = file("${path.module}/../argocd/root.yaml")
   })
   user_data_replace_on_change = true

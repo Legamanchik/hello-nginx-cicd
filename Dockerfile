@@ -12,7 +12,9 @@ COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY app/ /usr/share/nginx/html/
 
 USER root
-RUN sed -i "s/__APP_VERSION__/${APP_VERSION}/g" /usr/share/nginx/html/index.html \
+# hadolint ignore=DL3017
+RUN apk upgrade --no-cache \
+ && sed -i "s/__APP_VERSION__/${APP_VERSION}/g" /usr/share/nginx/html/index.html \
  && echo "${APP_VERSION}" > /usr/share/nginx/html/version.txt
 USER 101
 

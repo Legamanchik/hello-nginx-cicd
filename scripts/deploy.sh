@@ -1,6 +1,30 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+usage() {
+  cat <<'USAGE'
+Build, push and deploy the hello-nginx container.
+
+Usage:
+  ./scripts/deploy.sh build    build the image locally
+  ./scripts/deploy.sh push     push the image to Docker Hub
+  ./scripts/deploy.sh deploy   run the new image on the server (zero downtime, HTTPS via Caddy)
+  ./scripts/deploy.sh all      build + push + deploy
+
+Environment variables:
+  IMAGE_NAME          required  Docker Hub repo, e.g. myuser/hello-nginx
+  IMAGE_TAG           optional  defaults to the short git SHA
+  DEPLOY_HOST         deploy    server public IP (HTTPS domain and the final check)
+  DEPLOY_METHOD       optional  ssm (default, needs AWS credentials) or ssh
+  DEPLOY_INSTANCE_ID  ssm       EC2 instance ID of the server
+  DEPLOY_USER         ssh       SSH user (default: ec2-user)
+  SSH_KEY             ssh       path to the private key
+  SITE_DOMAIN         optional  HTTPS domain (default: <ip-with-dashes>.sslip.io)
+  CONTAINER_NAME      optional  default: hello-nginx
+  PUSH_LATEST         optional  also tag and push :latest (default: true)
+USAGE
+}
+
 log() { printf '\033[1;34m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -192,7 +216,7 @@ main() {
     push)   cmd_push ;;
     deploy) cmd_deploy ;;
     all)    cmd_build; cmd_push; cmd_deploy ;;
-    *)      sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *)      usage; exit 1 ;;
   esac
 }
 

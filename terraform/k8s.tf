@@ -74,12 +74,12 @@ resource "aws_instance" "k8s" {
   vpc_security_group_ids = [aws_security_group.k8s[0].id]
 
   user_data = templatefile("${path.module}/templates/bootstrap-k3s.sh.tftpl", {
-    public_ip          = aws_eip.k8s[0].public_ip
-    k3s_version        = var.k3s_version
-    argocd_version     = var.argocd_version
-    argocd_nodeport    = var.argocd_nodeport
-    admin_password     = var.admin_password
-    root_app_manifest  = file("${path.module}/../argocd/root.yaml")
+    public_ip         = aws_eip.k8s[0].public_ip
+    k3s_version       = var.k3s_version
+    argocd_version    = var.argocd_version
+    argocd_nodeport   = var.argocd_nodeport
+    admin_password    = var.admin_password
+    root_app_manifest = file("${path.module}/../argocd/root.yaml")
   })
   user_data_replace_on_change = true
 

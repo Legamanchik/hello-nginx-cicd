@@ -55,9 +55,9 @@ variable "enable_k8s" {
 }
 
 variable "k8s_instance_type" {
-  description = "EC2 type for the k3s node. c7i-flex.large (4 GB) runs k3s + Argo CD + the monitoring stack; t3.small (2 GB) is enough without monitoring"
+  description = "EC2 type for the k3s node. m7i-flex.large (8 GB) runs k3s + Argo CD + monitoring + cert-manager comfortably; 4 GB starts swapping; t3.small (2 GB) is enough without monitoring"
   type        = string
-  default     = "c7i-flex.large"
+  default     = "m7i-flex.large"
 }
 
 variable "k3s_version" {

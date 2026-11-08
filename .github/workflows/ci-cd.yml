@@ -1,0 +1,109 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE_NAME: ${{ vars.DOCKERHUB_USERNAME }}/hello-nginx
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hadolint (Dockerfile)
+        run: docker run --rm -i hadolint/hadolint:v2.12.0 < Dockerfile
+
+      - name: ShellCheck (scripts)
+        run: shellcheck scripts/*.sh
+
+  build:
+    name: Build, test, scan, push
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: ./scripts/deploy.sh build
+
+      - name: Smoke test
+        run: |
+          docker run -d --name smoke -p 8080:8080 \
+            --read-only --tmpfs /tmp --tmpfs /var/cache/nginx --cap-drop ALL \
+            "$IMAGE_NAME:$IMAGE_TAG"
+          for _ in $(seq 1 15); do
+            curl -fsS http://localhost:8080/healthz && break
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/ | grep -q "Hello, World!"
+          curl -fsS http://localhost:8080/version.txt | grep -qx "$IMAGE_TAG"
+          echo "Smoke test passed"
+
+      - name: Smoke test logs
+        if: always()
+        run: docker logs smoke || true
+
+      - name: Vulnerability scan (Trivy)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.58.1 image \
+            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
+            "$IMAGE_NAME:$IMAGE_TAG"
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push image
+        if: github.event_name != 'pull_request'
+        run: ./scripts/deploy.sh push
+
+  deploy:
+    name: Deploy to test server
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: test
+      url: http://${{ vars.DEPLOY_HOST }}/
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ec2-user' }}
+        run: SSH_KEY="$HOME/.ssh/deploy_key" ./scripts/deploy.sh deploy
+
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

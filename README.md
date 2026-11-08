@@ -9,9 +9,12 @@
 | Сайт, сервер 1 (Docker) | https://51-21-5-62.sslip.io |
 | Сайт, сервер 2 (Kubernetes) | https://51-20-48-179.sslip.io |
 | Pipeline | [GitHub Actions](https://github.com/Legamanchik/hello-nginx-cicd/actions/workflows/ci-cd.yml) |
+| Grafana | http://51.20.48.179:30300 → *Dashboards → Hello Nginx* |
+| Argo CD | https://51.20.48.179:30443 (сертифікат самопідписаний: *Advanced → Proceed*) |
+| Kubernetes | `kubectl` з kubeconfig «тільки для перегляду» |
 | Яка версія зараз працює | `/version.txt` на будь-якому з сайтів повертає SHA коміту |
 
-Grafana і Argo CD відкриті лише для IP адміністратора, тому нижче є їхні скріншоти.
+Для Grafana, Argo CD і Kubernetes є окремий користувач **`reviewer`** з правами лише на перегляд. Пароль і kubeconfig надіслано разом з посиланням на репозиторій.
 
 ### Як вимоги завдання закриті
 
@@ -88,6 +91,7 @@ flowchart LR
 | sslip.io | Безкоштовний домен, який вказує на IP. Він потрібен, щоб Let's Encrypt видав справжній сертифікат. |
 | k3s на одному сервері | Повноцінний Kubernetes за ціною одного EC2. EKS коштує від $73 на місяць лише за control plane. |
 | Стан Terraform у S3 з `use_lockfile` | Не загубиться разом з ноутбуком і не зламається від двох одночасних `apply`. |
+| Окремий користувач `reviewer` | Перевіряльник бачить усе, але нічого не може змінити. У Kubernetes йому недоступні Secrets і `exec`. Пароль адміністратора довгий і відомий лише власнику, SSH відкритий тільки для його IP. |
 
 ## Що де лежить
 
@@ -95,12 +99,14 @@ flowchart LR
 |---|---|
 | `app/`, `nginx/`, `Dockerfile` | сайт, конфіг Nginx (`/healthz`, `/nginx_status`, security-заголовки) і образ |
 | `scripts/deploy.sh` | збірка, push і деплой на сервер 1 (через SSM або SSH) |
+| `scripts/reviewer-kubeconfig.sh` | kubeconfig «тільки для перегляду» для перевіряльника |
 | `.github/workflows/ci-cd.yml` | pipeline |
 | `.github/dependabot.yml` | щотижневе оновлення actions, базового образу і провайдерів Terraform |
 | `k8s/` | сайт у Kubernetes: Deployment, Service, Ingress з TLS, метрики, алерти, перевірки доступності |
 | `argocd/root.yaml` | головний застосунок Argo CD, який підтягує все з `argocd/apps/` |
 | `argocd/apps/` | що встановлено в кластері: сайт, Prometheus + Grafana, Loki, Alloy, blackbox exporter, cert-manager |
-| `monitoring/` | дашборд Grafana (генерується скриптом `build.py`) |
+| `monitoring/` | дашборд Grafana (генерується скриптом `build.py`) і Job, що створює користувача `reviewer` |
+| `cluster/` | обліковий запис `reviewer` у Kubernetes (вбудована роль `view`) |
 | `terraform/` | EC2, security groups, Elastic IP, IAM для OIDC/SSM |
 | `terraform/state-bucket/` | S3-бакет для стану Terraform (створюється один раз) |
 
@@ -132,7 +138,8 @@ ssh-keygen -t ed25519 -N "" -f ~/.ssh/hello-nginx-deploy
 Створіть `terraform/terraform.tfvars`. Цей файл у git не потрапляє:
 ```hcl
 admin_cidrs                = ["ВАШ_IP/32"]   # curl https://checkip.amazonaws.com
-admin_password             = "придумайте-пароль"  # для Argo CD і Grafana
+admin_password             = "довгий-випадковий-пароль"  # admin в Argo CD і Grafana
+reviewer_password          = "пароль-для-перегляду"      # reviewer в Argo CD і Grafana
 github_oidc_subject_prefix = "..."  # gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix
 ```
 
@@ -160,14 +167,23 @@ gh secret set DOCKERHUB_TOKEN
 
 **5. Запушити код.** Через ~2 хвилини сайт доступний на обох серверах.
 
+**6. Видати доступ перевіряльнику** (опційно). Логін `reviewer` з паролем `reviewer_password` уже працює в Grafana і Argo CD. Kubeconfig «тільки для перегляду» створює команда:
+```bash
+./scripts/reviewer-kubeconfig.sh <IP_сервера_2>
+```
+Вона запише файл `reviewer-kubeconfig.yaml`, який git ігнорує. Перевірити його можна так:
+```bash
+KUBECONFIG=reviewer-kubeconfig.yaml kubectl get pods -A
+```
+
 ## Перевірка
 
 | Що | Де |
 |---|---|
 | Сайти | `https://<IP-через-дефіси>.sslip.io` для обох серверів (по IP теж працює, але без HTTPS) |
 | Стан і версія | `/healthz` повертає `ok`, а `/version.txt` повертає SHA коміту |
-| Argo CD | `https://<IP_сервера_2>:30443`, логін `admin` (сертифікат самопідписаний) |
-| Grafana | `http://<IP_сервера_2>:30300` → *Dashboards → Hello Nginx* |
+| Argo CD | `https://<IP_сервера_2>:30443`, логін `reviewer` або `admin` (сертифікат самопідписаний) |
+| Grafana | `http://<IP_сервера_2>:30300` → *Dashboards → Hello Nginx*, логін `reviewer` або `admin` |
 
 Щоб перевірити автодеплой, змініть текст в `app/index.html` і запуште.
 

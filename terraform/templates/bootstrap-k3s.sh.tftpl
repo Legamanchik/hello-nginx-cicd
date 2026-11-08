@@ -6,6 +6,7 @@ PUBLIC_IP="${public_ip}"
 K3S_VERSION="${k3s_version}"
 ARGOCD_VERSION="${argocd_version}"
 ARGOCD_NODEPORT="${argocd_nodeport}"
+ADMIN_PASSWORD='${admin_password}'
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 export PATH=$PATH:/usr/local/bin
@@ -52,14 +53,25 @@ kubectl -n argocd rollout status deployment argocd-server --timeout=600s
 kubectl -n argocd rollout status deployment argocd-repo-server --timeout=600s
 kubectl -n argocd rollout status statefulset argocd-application-controller --timeout=600s
 
-echo "==> Registering the hello-nginx Application"
+echo "==> Admin passwords for Argo CD and Grafana"
+HASH=$(kubectl -n argocd exec deploy/argocd-server -- argocd account bcrypt --password "$ADMIN_PASSWORD")
+kubectl -n argocd patch secret argocd-secret --type merge -p "{
+  \"stringData\": {\"admin.password\": \"$HASH\", \"admin.passwordMtime\": \"$(date -u +%FT%TZ)\"}}"
+kubectl -n argocd delete secret argocd-initial-admin-secret --ignore-not-found
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n monitoring create secret generic grafana-admin \
+  --from-literal=admin-user=admin --from-literal=admin-password="$ADMIN_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+echo "==> Registering the root Application (app of apps)"
 cat <<'MANIFEST' | kubectl apply -f -
-${application_manifest}
+${root_app_manifest}
 MANIFEST
 
 echo "==> kubeconfig for ec2-user"
 install -d -o ec2-user -g ec2-user -m 700 /home/ec2-user/.kube
 install -o ec2-user -g ec2-user -m 600 /etc/rancher/k3s/k3s.yaml /home/ec2-user/.kube/config
+# shellcheck disable=SC2016
 echo 'export KUBECONFIG=$HOME/.kube/config' >> /home/ec2-user/.bashrc
 
 echo "==> Bootstrap complete"

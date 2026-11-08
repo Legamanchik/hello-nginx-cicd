@@ -27,3 +27,7 @@ output "argocd_url" {
 output "k8s_ssh_command" {
   value = var.enable_k8s ? "ssh -i ~/.ssh/hello-nginx-deploy ec2-user@${aws_eip.k8s[0].public_ip}" : null
 }
+
+output "grafana_url" {
+  value = var.enable_k8s ? "http://${aws_eip.k8s[0].public_ip}:${var.grafana_nodeport}/" : null
+}

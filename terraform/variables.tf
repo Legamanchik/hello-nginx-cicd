@@ -55,9 +55,9 @@ variable "enable_k8s" {
 }
 
 variable "k8s_instance_type" {
-  description = "EC2 type for the k3s node. t3.small (2 GB) fits k3s + a trimmed Argo CD with swap; c7i-flex.large (4 GB) is roomier but ~5x pricier"
+  description = "EC2 type for the k3s node. c7i-flex.large (4 GB) runs k3s + Argo CD + the monitoring stack; t3.small (2 GB) is enough without monitoring"
   type        = string
-  default     = "t3.small"
+  default     = "c7i-flex.large"
 }
 
 variable "k3s_version" {
@@ -78,8 +78,20 @@ variable "argocd_nodeport" {
   default     = 30443
 }
 
+variable "grafana_nodeport" {
+  description = "NodePort for Grafana"
+  type        = number
+  default     = 30300
+}
+
+variable "admin_password" {
+  description = "Password for the Argo CD 'admin' and Grafana 'admin' users (set it in terraform.tfvars, never in git). No single quotes."
+  type        = string
+  sensitive   = true
+}
+
 variable "admin_cidrs" {
-  description = "Your IP(s) in CIDR form, e.g. [\"203.0.113.10/32\"]: allowed to reach SSH, the Kubernetes API and the Argo CD UI on the k3s node"
+  description = "Your IP(s) in CIDR form, e.g. [\"203.0.113.10/32\"]: allowed to reach SSH, the Kubernetes API, Argo CD and Grafana on the k3s node"
   type        = list(string)
   default     = []
 }

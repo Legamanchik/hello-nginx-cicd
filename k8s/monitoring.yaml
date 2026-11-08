@@ -1,0 +1,76 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hello-nginx
+  labels:
+    app.kubernetes.io/name: hello-nginx
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hello-nginx
+  endpoints:
+    - port: metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hello-nginx
+  labels:
+    app.kubernetes.io/name: hello-nginx
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  groups:
+    - name: hello-nginx
+      rules:
+        - alert: HelloNginxSiteDown
+          expr: probe_success{job="hello-nginx-probe"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Site {{ $labels.instance }} is down"
+            description: "The /healthz check has been failing for 2 minutes."
+        - alert: HelloNginxNoReadyPods
+          expr: sum(kube_deployment_status_replicas_available{namespace="hello", deployment="hello-nginx"}) < 1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "hello-nginx has no available pods in Kubernetes"
+        - alert: HelloNginxRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="hello"}[15m]) > 3
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.container }} in {{ $labels.pod }} restarts often"
+        - alert: HelloNginxSlow
+          expr: probe_duration_seconds{job="hello-nginx-probe"} > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Site {{ $labels.instance }} responds slower than 1s"
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: hello-nginx
+  labels:
+    app.kubernetes.io/name: hello-nginx
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  jobName: hello-nginx-probe
+  interval: 30s
+  module: http_2xx
+  prober:
+    url: blackbox-exporter-prometheus-blackbox-exporter.monitoring.svc:9115
+  targets:
+    staticConfig:
+      static:
+        - http://51.21.5.62/healthz
+        - http://hello-nginx.hello.svc/healthz

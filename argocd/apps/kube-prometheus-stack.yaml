@@ -1,0 +1,92 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 93.1.0
+    helm:
+      releaseName: kps
+      valuesObject:
+        fullnameOverride: kps
+
+        kubeEtcd: { enabled: false }
+        kubeControllerManager: { enabled: false }
+        kubeScheduler: { enabled: false }
+        kubeProxy: { enabled: false }
+        defaultRules:
+          rules:
+            etcd: false
+            kubeControllerManager: false
+            kubeSchedulerAlerting: false
+            kubeSchedulerRecording: false
+            kubeProxy: false
+
+        prometheusOperator:
+          admissionWebhooks: { enabled: false }
+          tls: { enabled: false }
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { memory: 128Mi }
+
+        prometheus:
+          prometheusSpec:
+            scrapeInterval: 30s
+            retention: 3d
+            retentionSize: 4GB
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            probeSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            resources:
+              requests: { cpu: 100m, memory: 400Mi }
+              limits: { memory: 1Gi }
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: local-path
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests: { storage: 5Gi }
+
+        alertmanager:
+          alertmanagerSpec:
+            retention: 72h
+            resources:
+              requests: { cpu: 10m, memory: 32Mi }
+              limits: { memory: 64Mi }
+
+        grafana:
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+          service:
+            type: NodePort
+            nodePort: 30300
+          defaultDashboardsTimezone: browser
+          additionalDataSources:
+            - name: Loki
+              type: loki
+              uid: loki
+              access: proxy
+              url: http://loki.monitoring.svc:3100
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 384Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

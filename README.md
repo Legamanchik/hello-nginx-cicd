@@ -1,220 +1,125 @@
-# hello-nginx: Docker + CI/CD на AWS
+# Hello World на Nginx: Docker + CI/CD + Kubernetes
 
-Простий веб-додаток «Hello, World!» на Nginx, запакований у Docker-контейнер.
-Його автоматично збирає, перевіряє та розгортає на тестовому сервері AWS EC2
-pipeline на GitHub Actions після кожного коміту в `main`.
+Проста сторінка «Hello, World!» на Nginx. Після кожного push у `main` вона сама збирається, перевіряється і викочується на два сервери в AWS:
 
-## Архітектура
+- **Сервер 1 (Docker):** контейнер оновлюється скриптом `scripts/deploy.sh` через SSH.
+- **Сервер 2 (k3s + Argo CD):** Kubernetes сам підтягує нову версію з git (GitOps).
 
-```
- git push (main)
-       │
-       ▼
- ┌───────────────────────────── GitHub Actions ─────────────────────────────┐
- │ lint            build                                    deploy          │
- │ hadolint   ──►  docker build ─► smoke test ─► Trivy ─►   ssh + deploy.sh │
- │ shellcheck                                   push ──┐       │            │
- └─────────────────────────────────────────────────────┼───────┼────────────┘
-                                                       ▼       ▼
-                                               Docker Hub   EC2 (t3.micro, Amazon Linux 2023)
-                                               :<sha>        └─ Docker: hello-nginx  :80 → :8080
-                                               :latest          healthcheck + автоматичний rollback
-```
+Обидва сервери створює Terraform.
 
-| Компонент | Вибір | Чому |
-|---|---|---|
-| Веб-сервер | `nginx-unprivileged:stable-alpine` | малий образ, працює не від root |
-| CI/CD | GitHub Actions | безкоштовний для публічних репозиторіїв |
-| Registry | Docker Hub (публічний репозиторій) | безкоштовний, сервер робить `pull` без логіна |
-| Сервер | AWS EC2 t3.micro, Amazon Linux 2023 | входить у Free plan |
-
-### Структура репозиторію
+## Як це працює
 
 ```
-├── app/index.html               # сторінка (версія підставляється під час збірки)
-├── nginx/default.conf           # конфіг Nginx: /healthz, /nginx_status, security-заголовки
-├── Dockerfile
-├── .dockerignore                # у build context потрапляють лише app/ і nginx/
-├── scripts/
-│   ├── deploy.sh                # build / push / deploy / all
-│   └── bootstrap-server.sh      # одноразове налаштування сервера (Docker, swap)
-├── terraform/                   # інфраструктура AWS: SG, key pair, EC2, Elastic IP, (Budget)
-└── .github/workflows/ci-cd.yml  # CI/CD pipeline
+git push → GitHub Actions
+            ├─ перевірка Dockerfile і скриптів (hadolint, shellcheck)
+            ├─ збірка образу → smoke test → перевірка вразливостей (Trivy) → Docker Hub
+            ├─ деплой на сервер 1 по SSH (якщо новий контейнер не піднявся, повертається старий)
+            └─ коміт нового тегу в k8s/ → Argo CD бачить зміну → оновлює сервер 2
 ```
 
-## Як працює pipeline
+Кожен образ отримує тег, що дорівнює SHA коміту. Яка версія зараз працює, можна подивитися за адресою `/version.txt`.
 
-| Подія | lint | build + smoke test + scan | push у Docker Hub | deploy |
-|---|:-:|:-:|:-:|:-:|
-| Pull request у `main` | ✅ | ✅ | — | — |
-| Push / merge у `main` | ✅ | ✅ | ✅ | ✅ |
+## Що де лежить
 
-1. **lint**: перевіряє Dockerfile через `hadolint`, а скрипти через `shellcheck`.
-2. **build**:
-   - `deploy.sh build` збирає образ із тегом `<git sha>` і `latest`;
-   - smoke test запускає контейнер у режимі read-only і перевіряє `/healthz`, вміст сторінки та версію;
-   - Trivy блокує pipeline, якщо в образі є HIGH/CRITICAL вразливості, для яких уже є виправлення;
-   - `deploy.sh push` надсилає образ у Docker Hub.
-3. **deploy**: `deploy.sh deploy` заходить на сервер по SSH і робить таке:
-   - завантажує новий образ;
-   - перейменовує поточний контейнер на `hello-nginx_prev`;
-   - запускає новий контейнер і чекає статусу `healthy` від Docker HEALTHCHECK;
-   - якщо статус `healthy`, видаляє старий контейнер;
-   - якщо ні, **автоматично повертає попередню версію** і завершує pipeline з помилкою;
-   - наприкінці перевіряє `http://<server>/healthz` ззовні.
+| Шлях | Що там |
+|---|---|
+| `app/`, `nginx/`, `Dockerfile` | сам сайт, конфіг Nginx і образ |
+| `scripts/deploy.sh` | збірка, push і деплой на сервер 1 |
+| `.github/workflows/ci-cd.yml` | pipeline |
+| `k8s/` | маніфести для Kubernetes (Deployment, Service, Ingress) |
+| `argocd/application.yaml` | що саме Argo CD має синхронізувати |
+| `terraform/` | сервери, security groups, статичні IP |
 
-Інші особливості:
+## Як розгорнути у себе
 
-- **Захист контейнера:** `--read-only`, `--cap-drop ALL`, `no-new-privileges`, ліміти пам'яті та процесів, ротація логів.
-- **Послідовні деплої:** `concurrency` не дає двом деплоям іти одночасно.
-- **Секрети:** зберігаються тільки в GitHub Secrets.
-- **Простежуваність:** тег образу дорівнює git SHA, тому завжди відомо, який коміт зараз працює на сервері (`http://<server>/version.txt`).
+Знадобляться акаунти **AWS**, **GitHub** і **Docker Hub**. Локально треба встановити `terraform`, `aws` CLI і `gh`.
 
-## Налаштування з нуля
-
-### Що потрібно
-- Акаунти: GitHub, Docker Hub, AWS.
-- Локально: `git`, `ssh`. Для локального запуску потрібен ще Docker.
-
-### 1. Docker Hub
-1. Створіть **публічний** репозиторій `hello-nginx`.
-2. Відкрийте *Account settings → Personal access tokens → Generate new token* і створіть токен з правами **Read & Write**. Збережіть його, він знадобиться для GitHub.
-
-### 2. Сервер в AWS (EC2)
-
-> **Про бюджет.** Новий акаунт AWS (створений після 15.07.2025) отримує Free plan: кредити до $200 на 6 місяців. Коли кредити закінчуються, акаунт на Free plan закривається, а не виставляє рахунок. t3.micro коштує ≈ $7.5 на місяць, публічна IPv4-адреса ≈ $3.6 на місяць, і обидва платежі списуються з кредитів.
-
-#### Варіант А: Terraform (рекомендовано)
-
-Terraform створює все одразу: security group (порти 22 і 80), SSH-ключ, EC2 `t3.micro` на Amazon Linux 2023 і Elastic IP. Диск зашифрований, увімкнено лише IMDSv2. Docker і swap встановлюються автоматично через `user_data`: це той самий `scripts/bootstrap-server.sh`.
-
-Що потрібно: Terraform ≥ 1.6 (версія закріплена в `terraform/.terraform-version` для tfenv) і вхід в AWS CLI (`aws login` або `aws configure`).
-
+**1. Увійти в AWS і GitHub**
 ```bash
-ssh-keygen -t ed25519 -N "" -C hello-nginx-deploy -f ~/.ssh/hello-nginx-deploy
+aws login
+```
+```bash
+gh auth login
+```
+
+**2. Створити SSH-ключ для деплою**
+```bash
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/hello-nginx-deploy
+```
+
+**3. Підняти сервери**
+
+Спершу створіть файл `terraform/terraform.tfvars` і впишіть у нього свій IP. Тільки з цієї адреси будуть доступні SSH, kubectl і Argo CD на сервері 2. Свій IP можна дізнатися командою `curl https://checkip.amazonaws.com`.
+```hcl
+admin_cidrs = ["ВАШ_IP/32"]
 ```
 ```bash
 cd terraform && terraform init && terraform apply
 ```
-Після `apply` команда виведе `public_ip`, `app_url` і `ssh_command`. Bootstrap сервера займає ≈ 1–2 хвилини.
+Terraform виведе IP обох серверів і посилання на Argo CD. Сервер 2 налаштовується ще приблизно 5 хвилин після цього.
 
-Далі покладіть у `known_hosts` справжній ключ сервера:
+**4. Додати секрети в GitHub**
+
+Ці команди виконуються з папки репозиторію.
+
+Спершу збережіть ключ сервера 1, щоб CI міг безпечно підключатися по SSH:
 ```bash
-ssh-keyscan -t ed25519 <public_ip> > ~/.ssh/hello-nginx-known_hosts
+ssh-keyscan -t ed25519 <IP_сервера_1> > ~/.ssh/hello-nginx-known_hosts
 ```
-Перш ніж довіряти цьому ключу, звірте його відбиток із консоллю інстансу: `ssh-keygen -lf ~/.ssh/hello-nginx-known_hosts` має показати той самий SHA256, що й `aws ec2 get-console-output --instance-id <id> --latest --output text | grep SHA256`.
-
-Щоб видалити всю інфраструктуру, виконайте `terraform destroy`.
-
-> Опційно: задайте `budget_alert_email` у `terraform/terraform.tfvars` (див. `terraform.tfvars.example`). Тоді Terraform створить AWS Budget зі сповіщенням на пошту, коли прогноз витрат перевищить 80% від ліміту.
-
-#### Варіант Б: вручну через консоль AWS
-
-1. Відкрийте *EC2 → Key pairs → Create key pair*. Тип **ED25519**, формат `.pem`. Збережіть файл, наприклад як `~/.ssh/hello-nginx.pem`, і виконайте `chmod 600 ~/.ssh/hello-nginx.pem`.
-2. Відкрийте *EC2 → Launch instance* і задайте:
-   - **AMI:** Amazon Linux 2023;
-   - **Instance type:** `t3.micro`;
-   - **Key pair:** ключ із кроку 1;
-   - **Security group:** inbound-правила
-     - `SSH 22` з `0.0.0.0/0`, бо GitHub Actions підключається з динамічних IP. Вхід можливий тільки по ключу, паролі на Amazon Linux вимкнені;
-     - `HTTP 80` з `0.0.0.0/0`;
-   - **Storage:** 8–30 GB gp3.
-3. *(Рекомендовано)* Відкрийте *EC2 → Elastic IPs → Allocate* і прив'яжіть адресу до інстансу. Без цього IP зміниться після stop/start.
-4. Підготуйте сервер. Docker встановлюється один раз:
-   ```bash
-   scp -i ~/.ssh/hello-nginx.pem scripts/bootstrap-server.sh ec2-user@<SERVER_IP>:
-   ```
-   ```bash
-   ssh -i ~/.ssh/hello-nginx.pem ec2-user@<SERVER_IP> 'sudo bash bootstrap-server.sh'
-   ```
-
-### 3. GitHub-репозиторій
-1. Створіть **публічний** репозиторій і запуште код:
-   ```bash
-   git init -b main
-   git add .
-   git commit -m "Initial commit"
-   git remote add origin git@github.com:<you>/<repo>.git
-   git push -u origin main
-   ```
-   Перший push запустить pipeline. Деплой на цьому кроці впаде, бо секрети ще не налаштовані. Це нормально: після кроку 2 перезапустіть workflow.
-2. Відкрийте *Settings → Secrets and variables → Actions* і додайте значення:
-
-   **Variables** (вкладка *Variables*):
-
-   | Назва | Значення |
-   |---|---|
-   | `DOCKERHUB_USERNAME` | ваш логін Docker Hub |
-   | `DEPLOY_HOST` | публічний IP або Elastic IP сервера |
-   | `DEPLOY_USER` | *(необов'язково)* за замовчуванням `ec2-user` |
-
-   **Secrets** (вкладка *Secrets*):
-
-   | Назва | Значення |
-   |---|---|
-   | `DOCKERHUB_TOKEN` | токен із кроку 1 |
-   | `SSH_PRIVATE_KEY` | приватний ключ: `~/.ssh/hello-nginx-deploy` (варіант А) або `~/.ssh/hello-nginx.pem` (варіант Б) |
-   | `SSH_KNOWN_HOSTS` | вивід команди `ssh-keyscan -t ed25519 <SERVER_IP>` (захищає від MITM) |
-
-   Те саме можна зробити з терміналу через `gh`:
-   ```bash
-   gh secret set SSH_PRIVATE_KEY < ~/.ssh/hello-nginx-deploy
-   gh secret set SSH_KNOWN_HOSTS < ~/.ssh/hello-nginx-known_hosts
-   gh secret set DOCKERHUB_TOKEN          # вставте токен у відповідь на запит
-   gh variable set DOCKERHUB_USERNAME --body <dockerhub-user>
-   gh variable set DEPLOY_HOST --body <public_ip>
-   ```
-
-3. Відкрийте *Actions → CI/CD → Run workflow* або зробіть будь-який коміт у `main`.
-
-### 4. Перевірка
-- Сайт: `http://<SERVER_IP>/`
-- Health: `http://<SERVER_IP>/healthz` повертає `ok`.
-- Версія: `http://<SERVER_IP>/version.txt` повертає SHA коміту, який зараз розгорнутий.
-- Щоб перевірити автодеплой, змініть текст в `app/index.html`, закомітьте зміну в `main` і через ~1–2 хвилини оновіть сторінку.
-
-## Локальний запуск і ручний деплой
-
-Запуск лише на своїй машині:
+Потім додайте змінні й секрети:
 ```bash
-docker build -t hello-nginx:local --build-arg APP_VERSION=local .
+gh variable set DOCKERHUB_USERNAME --body <логін_docker_hub>
+gh variable set DEPLOY_HOST --body <IP_сервера_1>
+gh secret set SSH_PRIVATE_KEY < ~/.ssh/hello-nginx-deploy
+gh secret set SSH_KNOWN_HOSTS < ~/.ssh/hello-nginx-known_hosts
+gh secret set DOCKERHUB_TOKEN
 ```
-```bash
-docker run --rm -p 8080:8080 hello-nginx:local
-```
-Сайт буде доступний на http://localhost:8080.
+Остання команда попросить вставити токен Docker Hub. Створити його можна в *Docker Hub → Account settings → Personal access tokens*, з правами Read & Write.
 
-Ручний деплой тим самим скриптом, що й у CI:
-```bash
-docker login
-```
-```bash
-export IMAGE_NAME=<dockerhub-user>/hello-nginx
-export DEPLOY_HOST=<SERVER_IP>
-export SSH_KEY=~/.ssh/hello-nginx.pem
-./scripts/deploy.sh all          # build + push + deploy
-```
-Окремі кроки запускаються командами `./scripts/deploy.sh build`, `push` і `deploy`. Без аргументів скрипт виводить довідку.
+У `argocd/application.yaml` вкажіть посилання на свій репозиторій.
 
-### Корисні команди на сервері
+**5. Запушити код**
+
+Після push на вкладці *Actions* видно, як іде pipeline. Через 1–2 хвилини сайт доступний на обох серверах.
+
+## Перевірка
+
+| Що | Де |
+|---|---|
+| Сайт (Docker) | `http://<IP_сервера_1>/` |
+| Сайт (Kubernetes) | `http://<IP_сервера_2>/` |
+| Стан і версія | `/healthz` повертає `ok`, а `/version.txt` повертає SHA коміту |
+| Argo CD | `https://<IP_сервера_2>:30443`, логін `admin` (браузер попередить про самопідписаний сертифікат) |
+
+Пароль від Argo CD:
 ```bash
-docker ps                              # статус і health контейнера
-docker logs -f hello-nginx             # access/error логи nginx
-docker inspect --format '{{json .State.Health}}' hello-nginx
+ssh -i ~/.ssh/hello-nginx-deploy ec2-user@<IP_сервера_2> \
+  "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
+```
+
+Щоб перевірити автодеплой, змініть текст в `app/index.html` і запуште. Нова версія з'явиться на обох серверах.
+
+## Корисні команди
+
+```bash
+./scripts/deploy.sh all                    # ручний деплой на сервер 1 (потрібні IMAGE_NAME, DEPLOY_HOST)
+docker build -t hello . && docker run -p 8080:8080 hello   # запуск локально → http://localhost:8080
+ssh ... 'docker logs -f hello-nginx'       # логи на сервері 1
+ssh ... 'kubectl -n hello get pods'        # стан подів на сервері 2
+```
+
+## Видалити все
+
+```bash
+cd terraform && terraform destroy
 ```
 
 ## Якщо щось не працює
 
-| Симптом | Що перевірити |
-|---|---|
-| `deploy` падає з `Permission denied (publickey)` | `SSH_PRIVATE_KEY` вставлений повністю, разом із рядками `BEGIN`/`END`; `DEPLOY_USER` = `ec2-user` |
-| `Host key verification failed` | `SSH_KNOWN_HOSTS` згенерований для поточного IP; після зміни IP згенеруйте його заново |
-| `Service is not reachable from outside` | у security group відкритий порт 80 |
-| Контейнер `unhealthy`, і стався rollback | лог у кроці *Deploy* (скрипт виводить `docker logs`) |
-| `docker: permission denied` на сервері | після bootstrap перелогіньтесь, щоб застосувалась група `docker` |
-| Trivy зупинив build | оновіть базовий образ (`--pull` вже увімкнений) або виправте знайдену вразливість |
-
-## Подальші етапи (додаткові завдання)
-- [x] **Terraform:** security group, EC2, Elastic IP, `bootstrap-server.sh` як `user_data`.
-- [ ] **Kubernetes + ArgoCD (GitOps):** другий EC2 (`t3.small`) з k3s. CI оновлює тег образу в `k8s/`, а ArgoCD синхронізує кластер.
-- [ ] **Моніторинг і логування:** Grafana Cloud Free + Grafana Alloy (метрики `stub_status`, логи контейнера).
+- **Деплой падає з `Permission denied`:** перевірте, що `SSH_PRIVATE_KEY` вставлений повністю.
+- **`Host key verification failed`:** IP сервера змінився. Заново виконайте `ssh-keyscan` і оновіть секрет `SSH_KNOWN_HOSTS`.
+- **Trivy зупинив збірку:** у базовому образі з'явилися нові вразливості. Зазвичай допомагає просто перезапустити pipeline.
+- **Сервер 2 не відповідає:** подивіться лог встановлення:
+  ```bash
+  ssh ... 'sudo cat /var/log/bootstrap-k3s.log'
+  ```

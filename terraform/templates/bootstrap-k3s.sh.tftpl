@@ -27,7 +27,7 @@ curl -sfL https://get.k3s.io | \
     --tls-san "$PUBLIC_IP" \
     --write-kubeconfig-mode 0600
 
-until kubectl get nodes >/dev/null 2>&1; do sleep 3; done
+until [ "$(kubectl get nodes --no-headers 2>/dev/null | wc -l)" -gt 0 ]; do sleep 3; done
 kubectl wait --for=condition=Ready node --all --timeout=300s
 
 echo "==> Installing Argo CD $ARGOCD_VERSION"
@@ -60,5 +60,6 @@ MANIFEST
 echo "==> kubeconfig for ec2-user"
 install -d -o ec2-user -g ec2-user -m 700 /home/ec2-user/.kube
 install -o ec2-user -g ec2-user -m 600 /etc/rancher/k3s/k3s.yaml /home/ec2-user/.kube/config
+echo 'export KUBECONFIG=$HOME/.kube/config' >> /home/ec2-user/.bashrc
 
 echo "==> Bootstrap complete"

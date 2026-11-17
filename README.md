@@ -4,17 +4,18 @@
 
 ## Для перевіряльника
 
-| Що | Посилання |
-|---|---|
-| Сайт, сервер 1 (Docker) | https://51-21-5-62.sslip.io |
-| Сайт, сервер 2 (Kubernetes) | https://51-20-48-179.sslip.io |
-| Pipeline | [GitHub Actions](https://github.com/Legamanchik/hello-nginx-cicd/actions/workflows/ci-cd.yml) |
-| Grafana | http://51.20.48.179:30300 → *Dashboards → Hello Nginx* |
-| Argo CD | https://51.20.48.179:30443 (сертифікат самопідписаний: *Advanced → Proceed*) |
-| Kubernetes | `kubectl` з kubeconfig «тільки для перегляду» |
-| Яка версія зараз працює | `/version.txt` на будь-якому з сайтів повертає SHA коміту |
+> **Демо-сервери вимкнено 17.11.2026** після перевірки завдання, щоб не витрачати кредити AWS. Нижче є скріншоти, як усе працювало. Повністю розгорнути все заново можна за ≈ 15 хвилин за інструкцією [«Як розгорнути у себе»](#як-розгорнути-у-себе).
 
-Для Grafana, Argo CD і Kubernetes є окремий користувач **`reviewer`** з правами лише на перегляд. Пароль і kubeconfig надіслано разом з посиланням на репозиторій.
+| Що | Де |
+|---|---|
+| Pipeline | [GitHub Actions](https://github.com/Legamanchik/hello-nginx-cicd/actions/workflows/ci-cd.yml) |
+| Сайт, сервер 1 (Docker) | `https://<IP>.sslip.io` (вимкнено) |
+| Сайт, сервер 2 (Kubernetes) | `https://<IP>.sslip.io` (вимкнено) |
+| Grafana | `http://<IP_сервера_2>:30300` → *Dashboards → Hello Nginx* (вимкнено) |
+| Argo CD | `https://<IP_сервера_2>:30443` (вимкнено) |
+| Яка версія працює | `/version.txt` на сайті повертає SHA коміту |
+
+Поки сервери вимкнені, pipeline виконує лише перевірки, збірку і push образу в Docker Hub. Деплой вмикається змінною репозиторію `DEPLOY_ENABLED=true`.
 
 ### Як вимоги завдання закриті
 
@@ -23,7 +24,7 @@
 | Dockerfile з веб-додатком на Nginx | [`Dockerfile`](Dockerfile), [`nginx/default.conf`](nginx/default.conf) |
 | Скрипт: збірка → push у Docker Hub → деплой на сервер | [`scripts/deploy.sh`](scripts/deploy.sh) |
 | CI/CD на кожну зміну, деплой на тестовий сервер | [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) |
-| Сайт відкривається в браузері | посилання вище |
+| Сайт відкривається в браузері | працював до 17.11.2026, див. скріншоти нижче |
 | Інструкція з налаштування | розділ [«Як розгорнути у себе»](#як-розгорнути-у-себе) |
 | *Бонус:* моніторинг і логування | Prometheus, Grafana, Loki, алерти ([`argocd/apps/`](argocd/apps), [`k8s/monitoring.yaml`](k8s/monitoring.yaml)) |
 | *Бонус:* Kubernetes | k3s + Argo CD ([`k8s/`](k8s), [`argocd/`](argocd)) |
@@ -165,7 +166,11 @@ gh secret set DOCKERHUB_TOKEN
 
 Якщо ви зробили fork, замініть адресу репозиторію (`repoURL`) в `argocd/` і IP-адреси в `k8s/ingress.yaml`, `k8s/monitoring.yaml` та `monitoring/dashboards/build.py`.
 
-**5. Запушити код.** Через ~2 хвилини сайт доступний на обох серверах.
+**5. Увімкнути деплой і запушити код.**
+```bash
+gh variable set DEPLOY_ENABLED --body true
+```
+Через ~2 хвилини сайт доступний на обох серверах.
 
 **6. Видати доступ перевіряльнику** (опційно). Логін `reviewer` з паролем `reviewer_password` уже працює в Grafana і Argo CD. Kubeconfig «тільки для перегляду» створює команда:
 ```bash

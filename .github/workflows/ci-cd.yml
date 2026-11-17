@@ -131,7 +131,7 @@ jobs:
   deploy:
     name: Deploy to server 1 (Docker)
     needs: build
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment:
       name: test
@@ -158,7 +158,7 @@ jobs:
   gitops:
     name: Update k8s manifests (Argo CD)
     needs: build
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
